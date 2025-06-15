@@ -3,6 +3,26 @@ import selectors
 import sys
 
 
+def create_response(key):
+    with open('./frontend_files/index.html', 'rb') as file:
+        file_data = file.read()
+
+
+    response_headers = [
+        b"HTTP/1.1 200 OK\r\n",
+        b"Content-Type: text/html; charset=utf-8\r\n",
+        f"Content-Length: {len(file_data)}\r\n".encode('utf-8'),
+        b"Connection: close\r\n",
+        b"\r\n"
+    ]
+
+    response = b''.join(response_headers)
+
+    response += file_data
+
+    return response
+
+
 def get_request_type(data):
     if b'GET' in data:
         return 'GET'
@@ -33,42 +53,22 @@ def process_request(key, mask, s):
             key.data['headers_parsed'] = True
             key.data['request_line'] = request_line
 
-            request_type = get_request_type(key.data['request_line'])
-
-            if request_type == 'GET':
-                response = (
-                    b"HTTP/1.1 200 OK\r\n"
-                    b"Content-Type: text/plain\r\n"
-                    b"Content-Length: 15\r\n"
-                    b"Connection: close\r\n"
-                    b"\r\n"
-                    b"Hi from server!"
-                )
-                sock.send(response)
-            
-            s.unregister(sock)
-            sock.close()
-        # elif key.data['headers_parsed'] is True:
-        #     # print('test')
-        #     request_type = get_request_type(key.data['request_line'])
-        #     if request_type == 'GET':
-        #         key.data['output_buffer'] = b'Hi from server!'
-        #         s.register(sock, selectors.EVENT_WRITE, data=key.data)
-    else:
-        sock.send(key.data['output_buffer'])
-        s.unregister(sock)
-        sock.close()
-
-
+            request_type = get_request_type(request_line)
+            key.data['request_type'] = request_type
 
         
-    
-    # headers = request.split('\r\n\r\n')
-    # headers = headers[0].split('\r\n')
-    
-    # if 'GET' in headers[0]:
-    #     data['output_buffer']
-    
+        if key.data['headers_parsed'] is True and key.data['request_type']=='GET':
+            key.data['output_buffer'] = create_response(key)
+            s.modify(sock, selectors.EVENT_WRITE, data=key.data)        
+    elif mask & selectors.EVENT_WRITE:
+        if key.data['request_type']=='GET':
+            bytes_sent = sock.send(key.data['output_buffer'])
+            if len(key.data['output_buffer'])==bytes_sent:
+                key.data['output_buffer'] = b''
+                s.unregister(sock)
+                sock.close()
+            else:
+                key.data['output_buffer'] = key.data['output_buffer'][bytes_sent:]
 
 
 def accept_connection(sock, s):
@@ -81,7 +81,8 @@ def accept_connection(sock, s):
         'output_buffer': b'',
         'headers_parsed': False,
         'content_length': 0,
-        'request_line': b''
+        'request_line': b'',
+        'request_type': ''
     }
     events_mask = selectors.EVENT_READ | selectors.EVENT_WRITE
 
@@ -125,6 +126,8 @@ def main():
 
     try:
         event_loop(s)
+        s.unregister(listening_socket)
+        listening_socket.close()
     except:
         s.unregister(listening_socket)
         listening_socket.close()
