@@ -10,5 +10,15 @@
         <a href="http://localhost:7000/">Home</a>
         <a href="http://localhost:7000/upload-file.html">Upload File</a>
         <a href="http://localhost:7000/about.html">About</a>
+        
+        <form 
+            id="file_form"
+            action="http://localhost:7000/" 
+            method="POST" 
+            enctype="multipart/form-data"
+        >
+            <input type="file" name="file">
+            <button type="submit" form="file_form">Submit</button>
+        </form>
     </body>
 </html>

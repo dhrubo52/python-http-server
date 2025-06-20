@@ -40,19 +40,29 @@ def create_get_response(key):
     return response
 
 def create_post_response(key):
-    data = b"You just made a POST request."
+    data = key.data['input_buffer']
+    data_list = data.split(b'\r\n\r\n')
+    content_disposition = data_list[0].split(b'\r\n')[1]
+    content_disposition_list = content_disposition.split(b'"')
+    data_list = data_list[1].split(key.data['boundary'].encode('utf-8'))
+
+    file_name = content_disposition_list[len(content_disposition_list)-2].decode('utf-8')
+    file_data = data_list[0]
+
+    with open(f'./media/{file_name}', 'wb') as f:
+        f.write(file_data)
 
     response_headers = [
         b"HTTP/1.1 200 OK\r\n",
         b"Content-Type: text/plain; charset=utf-8\r\n",
-        f"Content-Length: {len(data)}\r\n".encode('utf-8'),
+        f"Content-Length: {len(b'File uploaded successfully.')}\r\n".encode('utf-8'),
         b"Connection: close\r\n",
         b"\r\n"
     ]
 
     response = b''.join(response_headers)
 
-    response += data
+    response += b"File uploaded successfully."
 
     return response
 
@@ -69,16 +79,16 @@ def get_request_type(data):
 
 def process_request(key, mask, s):
     sock = key.fileobj
-    
+
     if mask & selectors.EVENT_READ:
         try:
-            request_data = sock.recv(1024)
+            request_data = sock.recv(102400)
         except:
             request_data = b''
 
         if request_data:
-            key.data['input_buffer'] += request_data    
-        
+            key.data['input_buffer'] += request_data
+                
         # If we see atleast one b'\r\n\r\n' in the input buffer 
         # then it means we have atleast received the request line and headers
         if b'\r\n\r\n' in key.data['input_buffer'] and key.data['headers_parsed'] is False:
@@ -93,7 +103,6 @@ def process_request(key, mask, s):
             key.data['input_buffer'] = key.data['input_buffer'][request_and_headers_length:]
             key.data['headers_parsed'] = True
             key.data['request_line'] = request_line
-            print(request_line)
 
             request_type = get_request_type(request_line)
             key.data['request_type'] = request_type
@@ -101,12 +110,12 @@ def process_request(key, mask, s):
                 for header in headers_list:
                     if b'Content-Length' in header:
                         key.data['content_length'] = int(header.split(b' ')[1].decode('utf-8'))
-
+                    if b'Content-Type' in header:
+                        key.data['boundary'] = header.split(b'boundary=')[1].decode('utf-8')
+                
                 if key.data['content_length']==0:
                     s.unregister(sock)
                     sock.close()
-            
-
         
         if key.data['headers_parsed'] is True and key.data['request_type']=='GET':
             key.data['output_buffer'] = create_get_response(key)
@@ -130,7 +139,6 @@ def process_request(key, mask, s):
 
 def accept_connection(sock, s):
     conn, addr = sock.accept()
-
     conn.setblocking(False)
     data = {
         'addr': addr, 
@@ -139,9 +147,14 @@ def accept_connection(sock, s):
         'headers_parsed': False,
         'content_length': 0,
         'request_line': '',
-        'request_type': ''
+        'request_type': '',
+        'boundary': ''
     }
-    events_mask = selectors.EVENT_READ | selectors.EVENT_WRITE
+
+    # Do not put (selectors.EVENT_READ | selectors.EVENT_WRITE) here as the socket will be always 
+    # ready to write. So a write event may be triggered even when input buffer is empty.
+    # We will modify the socket to selectors.EVENT_READ when we are sure that there is something to write.
+    events_mask = selectors.EVENT_READ
 
     s.register(conn, events_mask, data=data)
 
@@ -150,7 +163,6 @@ def event_loop(s):
     try:
         while True:
             events = s.select(timeout=None)
-                
             for key, mask in events:
                 if key.data is None:
                     accept_connection(key.fileobj, s)
