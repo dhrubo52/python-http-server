@@ -1,7 +1,18 @@
 import socket
 import selectors
 import sys
+import os
 
+def bad_request():
+    response_headers = [
+        b"HTTP/1.1 400 Bad Request\r\n",
+        b"Content-Length: 0\r\n",
+        b"Connection: close\r\n",
+        b"\r\n",
+        b"Bad Request"
+    ]
+
+    return b''.join(response_headers)
 
 def create_get_response(key):
     request_file = key.data['request_line'].split(' ')[1]
@@ -14,15 +25,7 @@ def create_get_response(key):
             with open(f'./frontend_files{request_file}', 'rb') as file:
                 file_data = file.read()
     except:
-        response_headers = [
-            b"HTTP/1.1 404 Not Found\r\n",
-            b"Content-Type: text/plain; charset=utf-8\r\n",
-            b"Content-Length: 0\r\n",
-            b"Connection: close\r\n",
-            b"\r\n"
-        ]
-
-        return b''.join(response_headers)
+        return bad_request()
 
 
     response_headers = [
@@ -44,10 +47,15 @@ def create_post_response(key):
     data_list = data.split(b'\r\n\r\n')
     content_disposition = data_list[0].split(b'\r\n')[1]
     content_disposition_list = content_disposition.split(b'"')
-    data_list = data_list[1].split(key.data['boundary'].encode('utf-8'))
+    data_list = data_list[1].split(('\r\n--'+key.data['boundary']+'--\r\n').encode('utf-8'))
 
     file_name = content_disposition_list[len(content_disposition_list)-2].decode('utf-8')
     file_data = data_list[0]
+
+    if not file_data:
+        return bad_request()
+    
+    os.makedirs('./media', exist_ok=True)
 
     with open(f'./media/{file_name}', 'wb') as f:
         f.write(file_data)
@@ -65,9 +73,6 @@ def create_post_response(key):
     response += b"File uploaded successfully."
 
     return response
-
-
-
 
 def get_request_type(data):
     if 'GET' in data:
