@@ -2,6 +2,19 @@ import socket
 import selectors
 import sys
 import os
+import json
+
+
+def response_header(status, status_code, content_type=None, content_length=0):
+    response_headers = [
+        f"HTTP/1.1 {status_code} {status}\r\n".encode('utf-8'),
+        f"Content-Type: {content_type}; charset=utf-8\r\n".encode('utf-8') if content_type else b'',
+        f"Content-Length: {content_length}\r\n".encode('utf-8'),
+        b"Connection: close\r\n",
+        b"\r\n"
+    ]
+
+    return b''.join(response_headers)
 
 def bad_request():
     response_headers = [
@@ -16,61 +29,69 @@ def bad_request():
 
 def create_get_response(key):
     request_file = key.data['request_line'].split(' ')[1]
-    
+    json_data = None
+
     try:
         if request_file=='/':
             with open(f'./frontend_files/index.html', 'rb') as file:
                 file_data = file.read()
+        elif '?' in request_file:
+            param_list = request_file.split('?')[1].split('&')
+            
+            if 'file-list=true' in param_list:
+                os.makedirs('./media', exist_ok=True)
+
+                media_file_list = [file for file in os.listdir('./media') if os.path.isfile(os.path.join('./media', file))]
+                json_data = json.dumps({'media_file_list': media_file_list}).encode('utf-8')
+                
+            else:
+                with open(f'./frontend_files/index.html', 'rb') as file:
+                    file_data = file.read()
         else:
             with open(f'./frontend_files{request_file}', 'rb') as file:
                 file_data = file.read()
     except:
-        return bad_request()
+        return response_header(status='Not Found', status_code='404', content_type=None, content_length=0)
+    
+    if json_data:
+        response = response_header(status='OK', status_code='200', content_type='application/json', content_length=len(json_data))
 
+        response += json_data
+    else:
+        response = response_header(status='OK', status_code='200', content_type='text/html', content_length=len(file_data))
 
-    response_headers = [
-        b"HTTP/1.1 200 OK\r\n",
-        b"Content-Type: text/html; charset=utf-8\r\n",
-        f"Content-Length: {len(file_data)}\r\n".encode('utf-8'),
-        b"Connection: close\r\n",
-        b"\r\n"
-    ]
-
-    response = b''.join(response_headers)
-
-    response += file_data
-
+        response += file_data
+    
     return response
 
 def create_post_response(key):
-    data = key.data['input_buffer']
-    data_list = data.split(b'\r\n\r\n')
-    content_disposition = data_list[0].split(b'\r\n')[1]
-    content_disposition_list = content_disposition.split(b'"')
-    data_list = data_list[1].split(('\r\n--'+key.data['boundary']+'--\r\n').encode('utf-8'))
+    status_code = 200
+    # File upload requests without any files will still have some data like boundary, content-disposition
+    if key.data['content_length']>188:
+        data = key.data['input_buffer']
+        data_list = data.split(b'\r\n\r\n')
+        content_disposition = data_list[0].split(b'\r\n')[1]
+        content_disposition_list = content_disposition.split(b'"')
+        data_list = data_list[1].split(('\r\n--'+key.data['boundary']+'--\r\n').encode('utf-8'))
 
-    file_name = content_disposition_list[len(content_disposition_list)-2].decode('utf-8')
-    file_data = data_list[0]
+        file_name = content_disposition_list[len(content_disposition_list)-2].decode('utf-8')
+        file_data = data_list[0]
 
-    if not file_data:
-        return bad_request()
+        if not file_data:
+            return bad_request()
+        
+        os.makedirs('./media', exist_ok=True)
+
+        with open(f'./media/{file_name}', 'wb') as f:
+            f.write(file_data)
+
+        status_code = 201
     
-    os.makedirs('./media', exist_ok=True)
-
-    with open(f'./media/{file_name}', 'wb') as f:
-        f.write(file_data)
-
-    response_headers = [
-        b"HTTP/1.1 200 OK\r\n",
-        b"Content-Type: text/plain; charset=utf-8\r\n",
-        f"Content-Length: {len(b'File uploaded successfully.')}\r\n".encode('utf-8'),
-        b"Connection: close\r\n",
-        b"\r\n"
-    ]
-
-    response = b''.join(response_headers)
-
-    response += b"File uploaded successfully."
+    with open(f'./frontend_files/upload-file.html', 'rb') as f:
+        file_data = f.read()
+    
+    response = response_header(status='Created', status_code=status_code, content_type='text/html', content_length=len(file_data))
+    response += file_data
 
     return response
 
@@ -164,7 +185,8 @@ def accept_connection(sock, s):
     s.register(conn, events_mask, data=data)
 
 
-def event_loop(s):
+def event_loop(s, HOST, PORT):
+    print(f'Started server. Address: {HOST}:{PORT}')
     try:
         while True:
             events = s.select(timeout=None)
@@ -179,16 +201,9 @@ def event_loop(s):
 
 def main():
     HOST = '127.0.0.1'
-    PORT = 7000
+    PORT = 8000
 
     s = selectors.DefaultSelector()
-
-    try:
-        if len(sys.argv) > 2:
-            HOST = sys.argv[1]
-            PORT = int(sys.argv[2])
-    except:
-        return 0
 
     listening_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     listening_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -199,7 +214,7 @@ def main():
     s.register(listening_socket, selectors.EVENT_READ, data=None) 
 
     try:
-        event_loop(s)
+        event_loop(s, HOST, PORT)
         s.unregister(listening_socket)
         listening_socket.close()
     except:

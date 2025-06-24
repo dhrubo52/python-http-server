@@ -7,18 +7,41 @@
         <h2>
             Hi, You are in upload file page!
         </h2>
-        <a href="http://localhost:7000/">Home</a>
-        <a href="http://localhost:7000/upload-file.html">Upload File</a>
-        <a href="http://localhost:7000/about.html">About</a>
+
+        <a href="http://localhost:8000/">Home</a>
+        <a style="margin: 0px 20px;" href="http://localhost:8000/upload-file.html">Upload File</a>
+        <a href="http://localhost:8000/about.html">About</a>
         
         <form 
             id="file_form"
-            action="http://localhost:7000/" 
+            style="margin: 10px 0 0 0;"
+            action="http://localhost:8000/" 
             method="POST" 
             enctype="multipart/form-data"
         >
             <input type="file" name="file">
             <button type="submit" form="file_form">Submit</button>
         </form>
+
+        <div id="file-container" style="margin: 20px 0 0 0;">
+
+        </div>
+
+        <script>
+            fetch("http://localhost:8000/?file-list=true")
+            .then((response)=>{
+                return response.json();
+            })
+            .then((data)=>{
+                let media_file_list = data.media_file_list;
+
+                for(let i=0; i<media_file_list.length; ++i) {
+                    let p = document.createElement("p");
+                    p.textContent = media_file_list[i];
+                    let file_container = document.getElementById("file-container");
+                    file_container.appendChild(p);
+                }
+            })
+        </script>
     </body>
 </html>
