@@ -43,7 +43,6 @@ def create_get_response(key):
 
                 media_file_list = [file for file in os.listdir('./media') if os.path.isfile(os.path.join('./media', file))]
                 json_data = json.dumps({'media_file_list': media_file_list}).encode('utf-8')
-                
             else:
                 with open(f'./frontend_files/index.html', 'rb') as file:
                     file_data = file.read()
@@ -100,6 +99,8 @@ def get_request_type(data):
         return 'GET'
     elif 'POST' in data:
         return 'POST'
+    elif 'PUT' in data:
+        return 'PUT'
     else:
         return None
 

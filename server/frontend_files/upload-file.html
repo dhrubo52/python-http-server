@@ -1,8 +1,33 @@
 <!DOCTYPE html>
 <html>
-    <title>
-        Hello World
-    </title>
+    <head>
+        <style>
+            * {
+                box-sizing: border-box;
+                padding: 0;
+            }
+
+            #file-container {
+                margin: 20px 0 0 0;
+                display: grid;
+                grid-template-columns: repeat(2, auto);
+                width: fit-content;
+                gap: 10px;
+            }
+
+            input + input {
+                margin: 10px 0 0 0;
+            }
+
+            .button {
+                padding: 5px;
+            }
+        </style>
+
+        <title>
+            Hello World
+        </title>
+    </head>
     <body>
         <h2>
             Hi, You are in upload file page!
@@ -23,23 +48,55 @@
             <button type="submit" form="file_form">Submit</button>
         </form>
 
-        <div id="file-container" style="margin: 20px 0 0 0;">
+        <div id="file-container">
 
         </div>
 
         <script>
+            function enableEdit(button, input) {
+                let inputValues = input.value.split(".");
+                input.value = inputValues[0];
+                input.setAttribute("data-file-type", inputValues[1]);
+                input.disabled = false;
+                button.textContent = "Submit";
+            }
+
+            function disableEdit(button, input) {
+                input.value = `${input.value}.${input.dataset.fileType}`;
+                input.disabled = true;
+                button.textContent = "Edit File Name";
+            }
+
             fetch("http://localhost:8000/?file-list=true")
             .then((response)=>{
                 return response.json();
             })
             .then((data)=>{
                 let media_file_list = data.media_file_list;
+                let file_container = document.getElementById("file-container");
 
                 for(let i=0; i<media_file_list.length; ++i) {
-                    let p = document.createElement("p");
-                    p.textContent = media_file_list[i];
-                    let file_container = document.getElementById("file-container");
-                    file_container.appendChild(p);
+                    let input = document.createElement("input");
+                    input.id = `input-${i}`;
+                    input.type = "text";
+                    input.value = media_file_list[i];
+                    input.disabled = true;
+                    file_container.appendChild(input);
+                    
+                    let editButton = document.createElement("button");
+                    editButton.id = `${i}`;
+                    editButton.textContent = "Edit File Name";
+                    editButton.classList.add("button");
+                    editButton.addEventListener("click", (e)=>{
+                        let button = e.target;
+                        if(button.textContent==="Edit File Name") {
+                            enableEdit(button, input);
+                        }
+                        else {
+                            disableEdit(button, input);
+                        }
+                    })
+                    file_container.appendChild(editButton);
                 }
             })
         </script>
