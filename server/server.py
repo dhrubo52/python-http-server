@@ -9,23 +9,13 @@ def response_header(status, status_code, content_type=None, content_length=0):
     response_headers = [
         f"HTTP/1.1 {status_code} {status}\r\n".encode('utf-8'),
         f"Content-Type: {content_type}; charset=utf-8\r\n".encode('utf-8') if content_type else b'',
-        f"Content-Length: {content_length}\r\n".encode('utf-8'),
+        f"Content-Length: {content_length}\r\n".encode('utf-8') if content_type else b'',
         b"Connection: close\r\n",
         b"\r\n"
     ]
 
     return b''.join(response_headers)
 
-def bad_request():
-    response_headers = [
-        b"HTTP/1.1 400 Bad Request\r\n",
-        b"Content-Length: 0\r\n",
-        b"Connection: close\r\n",
-        b"\r\n",
-        b"Bad Request"
-    ]
-
-    return b''.join(response_headers)
 
 def valid_file_name(name):
     if name.count('.')!=1:
@@ -38,7 +28,7 @@ def valid_file_name(name):
     return True
 
 
-def create_get_response(key):
+def process_get_request(key):
     request_file = key.data['request_line'].split(' ')[1]
     json_data = None
 
@@ -75,8 +65,7 @@ def create_get_response(key):
     
     return response
 
-def create_post_response(key):
-    status_code = 200
+def process_post_request(key):
     # File upload requests without any files will still have some data like boundary, content-disposition
     if key.data['content_length']>188:
         data = key.data['input_buffer']
@@ -89,7 +78,7 @@ def create_post_response(key):
         file_data = data_list[0]
 
         if not file_data:
-            return bad_request()
+            return response_header(status='Bad Request', status_code=400)
         
         os.makedirs('./media', exist_ok=True)
 
@@ -97,19 +86,14 @@ def create_post_response(key):
             f.write(file_data)
 
         status_code = 201
-    
-    with open(f'./frontend_files/upload-file.html', 'rb') as f:
-        file_data = f.read()
-    
-    response = response_header(status='Created', status_code=status_code, content_type='text/html', content_length=len(file_data))
-    response += file_data
+        response = response_header(status='Created', status_code=201)
+    else:
+        response = response_header(status='Bad Request', status_code=400)
 
     return response
 
 
-def create_put_response(key):
-    status_code = 200
-
+def process_put_request(key):
     if key.data['content_length']>0:
         data = json.loads(key.data['input_buffer'].decode('utf-8'))
         if 'old_name' not in data or 'new_name' not in data:
@@ -127,21 +111,51 @@ def create_put_response(key):
             return response_header(status='Not Found', status_code=404)
 
         os.rename(f"./media/{data['old_name']}", f"./media/{data['new_name']}")
+
+        response = response_header(status='OK', status_code=200)
     else:
-        return response_header(status='Bad Request', status_code=400)
-    
-    response = response_header(status='Updated', status_code=status_code)
+        response = response_header(status='Bad Request', status_code=400)
 
     return response
 
 
-def get_request_type(data):
-    if 'GET' in data:
+def process_delete_request(key):
+    status_code = 200
+    
+    if key.data['content_length']>0:
+        data = json.loads(key.data['input_buffer'].decode('utf-8'))
+        if 'file_name' not in data:
+            return response_header(status='Bad Request', status_code=400)
+
+        if data['file_name'].count('.')!=1:
+            return response_header(status='Bad Request', status_code=400)
+
+        if valid_file_name(data['file_name']) is False:
+            return response_header(status='Bad Request', status_code=400)
+
+        media_file_list = [file for file in os.listdir('./media') if os.path.isfile(os.path.join('./media', file))]
+        
+        if data['file_name'] not in media_file_list:
+            return response_header(status='Not Found', status_code=404)
+
+        os.remove(f"./media/{data['file_name']}")
+
+        response = response_header(status='OK', status_code=status_code)
+    else:
+        response = response_header(status='Bad Request', status_code=400)
+
+    return response
+
+
+def get_request_type(request_line):
+    if 'GET' in request_line:
         return 'GET'
-    elif 'POST' in data:
+    elif 'POST' in request_line:
         return 'POST'
-    elif 'PUT' in data:
+    elif 'PUT' in request_line:
         return 'PUT'
+    elif 'DELETE' in request_line:
+        return 'DELETE'
     else:
         return None
 
@@ -174,7 +188,7 @@ def process_request(key, mask, s):
 
             request_type = get_request_type(request_line)
             key.data['request_type'] = request_type
-            if request_type in ['POST', 'PUT']:
+            if request_type in ['POST', 'PUT', 'DELETE']:
                 for header in headers_list:
                     if b'Content-Length' in header:
                         key.data['content_length'] = int(header.split(b' ')[1].decode('utf-8'))
@@ -186,21 +200,26 @@ def process_request(key, mask, s):
                     sock.close()
         
         if key.data['headers_parsed'] is True and key.data['request_type']=='GET':
-            key.data['output_buffer'] = create_get_response(key)
+            key.data['output_buffer'] = process_get_request(key)
             s.modify(sock, selectors.EVENT_WRITE, data=key.data)
 
         if key.data['headers_parsed'] is True and key.data['request_type']=='POST':
             if len(key.data['input_buffer'])==key.data['content_length']:
-                key.data['output_buffer'] = create_post_response(key)
+                key.data['output_buffer'] = process_post_request(key)
                 s.modify(sock, selectors.EVENT_WRITE, data=key.data)
 
         if key.data['headers_parsed'] is True and key.data['request_type']=='PUT':
             if len(key.data['input_buffer'])==key.data['content_length']:
-                key.data['output_buffer'] = create_put_response(key)
+                key.data['output_buffer'] = process_put_request(key)
+                s.modify(sock, selectors.EVENT_WRITE, data=key.data)
+
+        if key.data['headers_parsed'] is True and key.data['request_type']=='DELETE':
+            if len(key.data['input_buffer'])==key.data['content_length']:
+                key.data['output_buffer'] = process_delete_request(key)
                 s.modify(sock, selectors.EVENT_WRITE, data=key.data)
 
     elif mask & selectors.EVENT_WRITE:
-        if key.data['request_type'] in ['GET', 'POST', 'PUT']:
+        if key.data['request_type'] in ['GET', 'POST', 'PUT', 'DELETE']:
             bytes_sent = sock.send(key.data['output_buffer'])
             if len(key.data['output_buffer'])==bytes_sent:
                 key.data['output_buffer'] = b''

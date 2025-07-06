@@ -10,7 +10,7 @@
             #file-container {
                 margin: 20px 0 0 0;
                 display: grid;
-                grid-template-columns: repeat(2, auto);
+                grid-template-columns: repeat(3, auto);
                 width: fit-content;
                 gap: 10px;
             }
@@ -40,9 +40,7 @@
         <form 
             id="file_form"
             style="margin: 10px 0 0 0;"
-            action="http://127.0.0.1:8000/" 
-            method="POST" 
-            enctype="multipart/form-data"
+            
         >
             <input type="file" name="file">
             <button type="submit" form="file_form">Submit</button>
@@ -53,36 +51,28 @@
         </div>
 
         <script>
-            function enableEdit(button, input) {
-                let inputValues = input.value.split(".");
-                input.setAttribute("data-old-name", input.value);
-                input.value = inputValues[0];
-                input.setAttribute("data-file-type", inputValues[1]);
-                input.disabled = false;
-                button.textContent = "Submit";
-            }
+            window.onload = getFileList;
 
-            function disableEdit(button, input) {
-                input.value = `${input.value}.${input.dataset.fileType}`;
-                input.disabled = true;
-                button.textContent = "Edit File Name";
-            }
-
-            fetch("http://127.0.0.1:8000/?file-list=true")
-            .then((response)=>{
-                return response.json();
+            let form = document.getElementById("file_form");
+            form.addEventListener("submit", function(e) {
+                e.preventDefault();
+                let formData = new FormData(this);
+                uploadFile(formData);
             })
-            .then((data)=>{
-                let media_file_list = data.media_file_list;
-                let file_container = document.getElementById("file-container");
 
-                for(let i=0; i<media_file_list.length; ++i) {
+            let mediaFileList = [];
+            let fileContainer = document.getElementById("file-container");
+
+            function renderFileList() {
+                fileContainer.innerHTML = "";
+                for(let i=0; i<mediaFileList.length; ++i) {
                     let input = document.createElement("input");
                     input.id = `input-${i}`;
                     input.type = "text";
-                    input.value = media_file_list[i];
+                    input.value = mediaFileList[i];
+                    input.name = mediaFileList[i];
                     input.disabled = true;
-                    file_container.appendChild(input);
+                    fileContainer.appendChild(input);
                     
                     let editButton = document.createElement("button");
                     editButton.id = `${i}`;
@@ -94,35 +84,97 @@
                             enableEdit(button, input);
                         }
                         else {
-                            // disableEdit(button, input);
-                            updateFileName(button, input);
+                            updateFileName(i, input);
                         }
                     })
-                    file_container.appendChild(editButton);
+                    fileContainer.appendChild(editButton);
 
-                    let cancelButton = document.createElement("button");
-                    cancelButton.id = `cancel-${i}`;
+                    let deleteButton = document.createElement("button");
+                    deleteButton.id = `delete-${i}`;
+                    deleteButton.textContent = "Delete";
+                    deleteButton.classList.add("button");
                     
+                    deleteButton.addEventListener("click", (e)=>{
+                        deleteFile(i, input);
+                    })
+                    fileContainer.appendChild(deleteButton);
                 }
-            })
+            }
 
-            function updateFileName(button, input) {
+            function enableEdit(button, input) {
+                let inputValues = input.value.split(".");
+                // input.setAttribute("data-old-name", input.name);
+                input.value = inputValues[0];
+                input.setAttribute("data-file-type", inputValues[1]);
+                input.disabled = false;
+                button.textContent = "Submit";
+            }
+
+            function uploadFile(formData) {
+                let request = new XMLHttpRequest();
+                request.open("POST", "http://127.0.0.1:8000/", true);
+
+                request.onload = () => {
+                    if(request.status===201) {
+                        getFileList();
+                    }
+                }   
+
+                request.send(formData);
+            }
+
+            function getFileList() {
+                let request = new XMLHttpRequest();
+                request.open("GET", "http://127.0.0.1:8000/?file-list=true", true);
+
+                request.onload = () => {
+                    if(request.status===200) {
+                        mediaFileList = JSON.parse(request.response).media_file_list;
+                        renderFileList();
+                    }
+                }
+
+                request.send();
+            }
+
+            function updateFileName(index, input) {
                 let request = new XMLHttpRequest();
                 request.open("PUT", "http://127.0.0.1:8000", true);
                 request.setRequestHeader("Content-Type", "application/json");
 
                 let data = JSON.stringify({
-                    "old_name": input.dataset.oldName,
+                    // "old_name": input.dataset.oldName,
+                    "old_name": input.name,
                     "new_name": `${input.value}.${input.dataset.fileType}`
                 })
 
+                request.onload = () => {
+                    if(request.status==200) {
+                        mediaFileList[index] = `${input.value}.${input.dataset.fileType}`;
+                        renderFileList();
+                    }
+                }
+
                 request.send(data);
+            }
+
+            function deleteFile(index, input) {
+                let request = new XMLHttpRequest();
+                request.open("DELETE", "http://127.0.0.1:8000", true);
+                request.setRequestHeader("Content-Type", "application/json");
+                
+                let data = JSON.stringify({
+                    file_name: input.name
+                })
 
                 request.onload = () => {
                     if(request.status==200) {
-                        window.location.href = "http://127.0.0.1:8000/upload-file.html";
+                        mediaFileList.splice(index, 1);
+                        renderFileList();
                     }
                 }
+
+                request.send(data);
             }
         </script>
     </body>
