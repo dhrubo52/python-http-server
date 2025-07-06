@@ -33,14 +33,14 @@
             Hi, You are in upload file page!
         </h2>
 
-        <a href="http://localhost:8000/">Home</a>
-        <a style="margin: 0px 20px;" href="http://localhost:8000/upload-file.html">Upload File</a>
-        <a href="http://localhost:8000/about.html">About</a>
+        <a href="http://127.0.0.1:8000/">Home</a>
+        <a style="margin: 0px 20px;" href="http://127.0.0.1:8000/upload-file.html">Upload File</a>
+        <a href="http://127.0.0.1:8000/about.html">About</a>
         
         <form 
             id="file_form"
             style="margin: 10px 0 0 0;"
-            action="http://localhost:8000/" 
+            action="http://127.0.0.1:8000/" 
             method="POST" 
             enctype="multipart/form-data"
         >
@@ -55,6 +55,7 @@
         <script>
             function enableEdit(button, input) {
                 let inputValues = input.value.split(".");
+                input.setAttribute("data-old-name", input.value);
                 input.value = inputValues[0];
                 input.setAttribute("data-file-type", inputValues[1]);
                 input.disabled = false;
@@ -67,7 +68,7 @@
                 button.textContent = "Edit File Name";
             }
 
-            fetch("http://localhost:8000/?file-list=true")
+            fetch("http://127.0.0.1:8000/?file-list=true")
             .then((response)=>{
                 return response.json();
             })
@@ -93,12 +94,36 @@
                             enableEdit(button, input);
                         }
                         else {
-                            disableEdit(button, input);
+                            // disableEdit(button, input);
+                            updateFileName(button, input);
                         }
                     })
                     file_container.appendChild(editButton);
+
+                    let cancelButton = document.createElement("button");
+                    cancelButton.id = `cancel-${i}`;
+                    
                 }
             })
+
+            function updateFileName(button, input) {
+                let request = new XMLHttpRequest();
+                request.open("PUT", "http://127.0.0.1:8000", true);
+                request.setRequestHeader("Content-Type", "application/json");
+
+                let data = JSON.stringify({
+                    "old_name": input.dataset.oldName,
+                    "new_name": `${input.value}.${input.dataset.fileType}`
+                })
+
+                request.send(data);
+
+                request.onload = () => {
+                    if(request.status==200) {
+                        window.location.href = "http://127.0.0.1:8000/upload-file.html";
+                    }
+                }
+            }
         </script>
     </body>
 </html>
